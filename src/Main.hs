@@ -12,6 +12,20 @@ data LispVal
   | String String
   | Bool Bool
 
+showVal :: LispVal -> String
+showVal (String contents) = "\"" ++ contents ++ "\""
+showVal (Atom name) = name
+showVal (Number contents) = show contents
+showVal (Bool True) = "#t"
+showVal (Bool False) = "#f"
+showVal (List contents) = "(" ++ unwordsList contents ++ ")"
+showVal (DottedList head tail) = "(" ++ unwordsList head ++ " . " ++ showVal tail ++ ")"
+
+unwordsList :: [LispVal] -> String
+unwordsList = unwords . map showVal
+
+instance Show LispVal where show = showVal
+
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
@@ -66,14 +80,50 @@ parseExpr =
       char ')'
       return x
 
-readExpr :: String -> String
+numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> LispVal
+numericBinop op params = Number $ foldl1 op $ map unpackNum params
+
+unpackNum :: LispVal -> Integer
+unpackNum (Number n) = n
+-- weak typing from the book, coercing "<num>" to num (0 if <num> not a number)
+-- unpackNum (String n) =
+  -- let parsed = reads n :: [(Integer, String)]
+   -- in if null parsed
+        -- then 0
+        -- else fst $ parsed !! 0
+-- unpackNum (List [n]) = unpackNum n
+-- I'm going to use strong(er) typing where anything that isn't a number is 0
+unpackNum _ = 0
+
+primitives :: [(String, [LispVal] -> LispVal)]
+primitives =
+  [ ("+", numericBinop (+)),
+    ("-", numericBinop (-)),
+    ("*", numericBinop (*)),
+    ("/", numericBinop div),
+    ("mod", numericBinop mod),
+    ("quotient", numericBinop quot),
+    ("remainder", numericBinop rem)
+  ]
+
+apply :: String -> [LispVal] -> LispVal
+apply func args = maybe (Bool False) ($ args) $ lookup func primitives
+
+eval :: LispVal -> LispVal
+eval val@(String _) = val
+eval val@(Number _) = val
+eval val@(Bool _) = val
+eval (List [Atom "quote", val]) = val
+eval (List (Atom func : args)) = apply func $ map eval args
+-- TODO incomplete cases
+
+readExpr :: String -> LispVal
 -- >> matches as much as it can of the first parser, then match what remains
 -- with the second parser, failing if either fails
 readExpr input = case parse parseExpr "lisp" input of
-  Left err -> "No match: " ++ show err
-  Right val -> "Found value"
+  Left err -> String $ "No match: " ++ show err
+  Right val -> val
 
 main :: IO ()
-main = do
-  (expr : _) <- getArgs
-  putStrLn (readExpr expr)
+-- >>= monad sequencer
+main = getArgs >>= print . eval . readExpr . head
