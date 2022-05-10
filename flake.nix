@@ -19,7 +19,7 @@
           buildInputs = with pkgs; [
             cabal-install
             ghc
-            stylish-haskell
+            haskellPackages.brittany
           ];
         };
 
